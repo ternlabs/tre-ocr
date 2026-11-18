@@ -1,0 +1,14 @@
+[project]
+name = "tre-ocr"
+version = "0.2.0"
+description = "OCR for scanned Vietnamese documents, with the accuracy measured and unsure values left empty"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "sets/LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "ternlabs" }]
+
+[project.urls]
+Homepage = "https://ternlabs.io"
+Repository = "https://github.com/ternlabs/tre-ocr"
+Weights = "https://raw.githubusercontent.com/ternlabs/tre-ocr-weights/round1/round1-rec.tar.gz"

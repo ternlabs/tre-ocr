@@ -1,0 +1,100 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:schema:pdf-read:1",
+ "title": "One PDF read for a caller with no person (tools/read.py)",
+ "description": "Version 1. A change that breaks a caller bumps the number in $id. measured: false with no pages is a refusal or a failure; with pages, a kind never measured, read on request.",
+ "type": "object",
+ "required": ["schema", "tool", "profile", "measured"],
+ "properties": {
+  "schema": {"const": "urn:schema:pdf-read:1"},
+  "tool": {"type": "string", "description": "the tool's version"},
+  "profile": {"const": "disclosures"},
+  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+  "measured": {"type": "boolean", "description": "false: refused, failed, or read with --unmeasured"},
+  "reason": {"type": "string", "description": "why not measured; a failure starts with \"failed: \""},
+  "notes": {"type": "array", "items": {"type": "string"}, "description": "what was measured and what was not"},
+  "documents": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": ["doc", "pages", "fields"],
+    "additionalProperties": false,
+    "properties": {
+     "doc": {"type": ["integer", "null"]},
+     "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+     "fields": {
+      "type": "object",
+      "required": ["company", "number", "place", "date"],
+      "additionalProperties": false,
+      "properties": {
+       "company": {"$ref": "#/$defs/field"},
+       "number": {"$ref": "#/$defs/field"},
+       "place": {"$ref": "#/$defs/field"},
+       "date": {"$ref": "#/$defs/field"}
+      }
+     }
+    }
+   }
+  },
+  "pages": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": ["page", "kind", "lines"],
+    "additionalProperties": false,
+    "properties": {
+     "page": {"type": "integer", "minimum": 1},
+     "kind": {"enum": ["read", "text layer", "skipped"]},
+     "why": {"type": "string", "description": "skipped: why; read: why a page with a text layer was read as a scan"},
+     "english": {"type": "string", "description": "present on a page with few tone marks: English, never measured"},
+     "seal": {"type": "string", "description": "present on a page with no colour: a seal's text may remain"},
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": ["text", "sure"],
+       "additionalProperties": false,
+       "properties": {
+        "text": {"type": "string", "description": "on an unsure line, every number is [?]"},
+        "sure": {"type": "boolean"}
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "additionalProperties": false,
+ "if": {"properties": {"measured": {"const": true}}},
+ "then": {"required": ["sha256", "notes", "documents", "pages"], "not": {"required": ["reason"]}},
+ "else": {"required": ["reason"]},
+ "dependentRequired": {"pages": ["documents", "notes", "sha256"]},
+ "$defs": {
+  "field": {
+   "type": "object",
+   "required": ["value", "how"],
+   "additionalProperties": false,
+   "properties": {
+    "value": {"type": ["string", "null"], "description": "null: not given; final, no person checks it"},
+    "how": {"enum": [
+     "matches the listing (provisional)",
+     "matches the listing, on a text layer (untested)",
+     "does not match the listing",
+     "no symbol in the meta",
+     "no cached listing here",
+     "symbol not in the listing",
+     "rule, unchecked",
+     "consistent with meta (untested)",
+     "disagrees with meta",
+     "not found by the rule, or on an unsure line",
+     "no heading found"
+    ]}
+   },
+   "allOf": [
+    {"if": {"properties": {"how": {"enum": ["matches the listing (provisional)", "matches the listing, on a text layer (untested)", "rule, unchecked", "consistent with meta (untested)"]}}},
+     "then": {"properties": {"value": {"type": "string"}}},
+     "else": {"properties": {"value": {"type": "null"}}}}
+   ]
+  }
+ }
+}

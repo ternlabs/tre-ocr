@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set C correction</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dcdad4;
+  --accent: #1f5fbf; --ok: #2e7d32; --warn: #b26a00; --bad: #b3261e;
+  --del: #fbe3e1; --ins: #e1f0e2; --mark: #fff1c2; --flag: #ffe45c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --ink: #e8e6e1; --muted: #9a988f; --line: #34332f;
+    --accent: #7aa7ff; --ok: #7bc47f; --warn: #f0b45a; --bad: #ff8a80;
+    --del: #4a2422; --ins: #1f3a22; --mark: #4a3f14; --flag: #8a7000;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif;
+       display: grid; grid-template-rows: auto 1fr; }
+header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px;
+         border-bottom: 1px solid var(--line); background: var(--panel); }
+header select { max-width: 340px; }
+button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+                        border-radius: 6px; padding: 4px 10px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+.badge.corrected { color: var(--warn); border-color: var(--warn); }
+.badge.checked { color: var(--ok); border-color: var(--ok); }
+.badge.dropped { color: var(--bad); border-color: var(--bad); }
+.spacer { flex: 1; }
+#status { color: var(--muted); font-size: 12px; }
+main { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+#imgpane { overflow: auto; border-right: 1px solid var(--line); position: relative; background: #8a8a8a; }
+#imgpane img { display: block; margin: 0 auto; }
+#zoombar { position: sticky; top: 0; z-index: 1; display: flex; gap: 4px; padding: 6px; background: var(--panel);
+           border-bottom: 1px solid var(--line); }
+#side { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: var(--panel); }
+nav { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); }
+nav button { border-radius: 6px 6px 0 0; border-bottom: none; }
+nav button.on { background: var(--bg); font-weight: 600; }
+.tab { display: none; overflow: auto; padding: 10px 12px; min-height: 0; }
+.tab.on { display: flex; flex-direction: column; gap: 10px; }
+#textwrap { position: relative; flex: 1; min-height: 360px; display: flex; }
+textarea, #hl { font: 15px/1.6 "Noto Serif", "Times New Roman", serif; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+textarea { position: relative; width: 100%; flex: 1; resize: none; color: var(--ink); background: transparent; }
+#hl { position: absolute; top: 0; left: 0; bottom: 0; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word;
+      color: transparent; background: var(--bg); pointer-events: none; }
+#hl mark { background: var(--flag); color: transparent; }
+#marks { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--flag); }
+#marks[hidden] { display: none; }
+input.flag { background: var(--flag); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0; }
+legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
+.fields { display: grid; grid-template-columns: 90px 1fr; gap: 6px 8px; align-items: center; }
+.fields input { width: 100%; }
+.draft { white-space: pre-wrap; font: 14px/1.6 "Noto Serif", serif; background: var(--bg); border: 1px solid var(--line);
+         border-radius: 6px; padding: 10px; }
+.diff del { background: var(--del); text-decoration: none; }
+.diff ins { background: var(--ins); text-decoration: none; }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px 12px; }
+.checks label { display: flex; gap: 6px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.ctx { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hint { color: var(--muted); font-size: 12px; margin: 0; }
+mark { background: var(--mark); color: inherit; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 50vh 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <button id="prev" title="Previous page (Alt+←)">←</button>
+  <select id="pick"></select>
+  <button id="next" title="Next page (Alt+→)">→</button>
+  <span id="badge" class="badge">new</span>
+  <span class="spacer"></span>
+  <span id="status"></span>
+  <button id="save" class="primary" title="Ctrl+S">Save corrected</button>
+  <button id="check" title="All numbers and heading fields ticked">Mark checked</button>
+  <select id="dropwhy">
+    <option value="">Drop page…</option>
+    <option>identity field</option>
+    <option>list of people</option>
+    <option>unreadable</option>
+    <option>not a disclosure page</option>
+  </select>
+</header>
+<main>
+  <div id="imgpane">
+    <div id="zoombar">
+      <button data-z="fit">Fit width</button>
+      <button data-z="-">−</button>
+      <button data-z="+">+</button>
+      <button data-z="1">100%</button>
+      <span id="zl" class="hint" style="align-self:center"></span>
+    </div>
+    <img id="img" alt="page scan">
+  </div>
+  <div id="side">
+    <nav>
+      <button data-tab="text" class="on">Text</button>
+      <button data-tab="drafts">Drafts</button>
+      <button data-tab="diff">Where drafts differ</button>
+      <button data-tab="second">Second read</button>
+    </nav>
+    <section id="tab-text" class="tab on">
+      <div class="row">
+        <span class="hint">Start from:</span>
+        <span id="startfrom" class="row"></span>
+      </div>
+      <details>
+        <summary class="hint">How to write the text</summary>
+        <ul class="hint">
+          <li>One printed line per line, its words in reading order. Lines are matched in any order when scored, so line order matters little; what is on each line matters.</li>
+          <li>Side-by-side columns are separate lines: the heading's left column (company, Số) first, then the right (national title, motto, place and date). A draft often joins them: split them.</li>
+          <li>Tables: one row per line, cell by cell, left to right: all of a cell's text (wrapped over several printed lines, as heading rows often are) before the next cell's. The draft reads across the whole row, a piece of each cell per line: regroup it. A word printed in three cells is written three times.</li>
+          <li>Repeats: keep what the page prints twice (a Vietnamese line and its English twin share names and numbers); delete what only the draft repeats.</li>
+          <li>Letters and marks as printed: â ê ô ơ ư ă đ are letters, so a draft's "e" for "ê" is a wrong letter. Where the scan lost a mark (faint, under a stamp), write the word if only one word fits; if unsure, your best reading, and say so in the note.</li>
+          <li>Leave out the signature box and handwritten signatures. Keep hand-filled numbers and dates, as a reader needs them. Under a stamp, type the printed letters you can read; a word you cannot read: type what you can, say so in the note.</li>
+        </ul>
+      </details>
+      <div id="marks" hidden></div>
+      <div id="textwrap">
+        <div id="hl" aria-hidden="true"></div>
+        <textarea id="text" spellcheck="false" placeholder="The page's text, line by line as printed. Leave out the signature box."></textarea>
+      </div>
+      <fieldset>
+        <legend>Heading fields</legend>
+        <label class="row"><input type="checkbox" id="hashead"> This page has a document heading</label>
+        <div class="fields" id="headfields" hidden>
+          <label for="f-company">Company</label><input id="f-company">
+          <label for="f-number">Số</label><input id="f-number" placeholder="e.g. 01/2026/NQ-HĐQT">
+          <label for="f-place">Place</label><input id="f-place">
+          <label for="f-date">Date</label><input id="f-date" placeholder="as printed: ngày … tháng … năm …">
+        </div>
+      </fieldset>
+      <input id="note" placeholder="Note (optional): what was hard to read">
+    </section>
+    <section id="tab-drafts" class="tab"></section>
+    <section id="tab-diff" class="tab">
+      <p class="hint">Words where the two drafts disagree: <del>first draft only</del> <ins>second draft only</ins>. Look at these on the scan first.</p>
+      <div id="diff" class="draft diff"></div>
+    </section>
+    <section id="tab-second" class="tab">
+      <p class="hint">Check each item against the scan, not against a draft. Tick it only when it matches the image exactly. Editing the text unticks the numbers that changed.</p>
+      <fieldset><legend>Numbers of 3+ digits</legend><div id="nums" class="checks"></div></fieldset>
+      <fieldset><legend>Heading fields</legend><div id="hf" class="checks"></div></fieldset>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const FIELDS = ["company", "number", "place", "date"];
+const NUM_RE = /\d+(?:[.,]\d+)*/g;
+let pages = [], cur = null, data = null, dirty = false, zoom = "fit";
+
+function esc(s) { return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function say(s) { $("status").textContent = s; }
+
+// Numbers as scored (METHOD.md, "Concepts"): digit strings of 3+ digits once separators go.
+function numbers(text) {
+  const out = [], seen = {};
+  for (const m of text.matchAll(NUM_RE)) {
+    if (m[0].replace(/\D/g, "").length < 3) continue;
+    seen[m[0]] = (seen[m[0]] || 0) + 1;
+    const ctx = text.slice(Math.max(0, m.index - 25), m.index + m[0].length + 25).replace(/\s+/g, " ");
+    out.push({ id: `${m[0]}#${seen[m[0]]}`, value: m[0], ctx });
+  }
+  return out;
+}
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+
+// Marks from --marks: a word to look at, in yellow until it is gone. A mark with "until"
+// is a line to move: yellow while that other line still comes after it.
+function markRe(word) {
+  const w = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, "gu");
+}
+
+function markOpen(m, text) {
+  const i = text.search(markRe(m.word));
+  return i >= 0 && (!m.until || text.slice(i).split("\n").slice(1).some((l) => l.trim() === m.until));
+}
+
+function inField(m, value) { return !m.until && markRe(m.word).test(value || ""); }
+
+function openMarks(marks, text, heading) {
+  return (marks || []).filter((m) => markOpen(m, text) || FIELDS.some((f) => inField(m, heading?.[f])));
+}
+
+function paint() {
+  const text = $("text").value, marks = data.marks || [], spans = [];
+  for (const m of marks) {
+    if (!markOpen(m, text)) continue;
+    for (const hit of text.matchAll(markRe(m.word))) spans.push([hit.index, hit.index + hit[0].length]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  let html = "", at = 0;
+  for (const [a, b] of spans) {
+    if (a < at) continue;
+    html += esc(text.slice(at, a)) + `<mark>${esc(text.slice(a, b))}</mark>`;
+    at = b;
+  }
+  $("hl").innerHTML = html + esc(text.slice(at)) + "\n";
+  syncHl();
+  const head = Object.fromEntries(FIELDS.map((f) => [f, $("f-" + f).value]));
+  FIELDS.forEach((f) => $("f-" + f).classList.toggle("flag", marks.some((m) => inField(m, head[f]))));
+  const left = openMarks(marks, text, head);
+  $("marks").hidden = !left.length;
+  $("marks").innerHTML = left.map((m) => `<span>${esc(m.word)} → <b>${esc(m.fix)}</b></span>`).join("");
+}
+
+function syncHl() {
+  const t = $("text"), h = $("hl");
+  h.style.width = t.clientWidth + 2 + "px";   // the box's scrollbar narrows its lines
+  h.scrollTop = t.scrollTop;
+}
+
+function marksLeft(p) { return openMarks(p.marks, p.text || "", p.heading).length; }
+
+function label(p) {
+  const st = p.drop ? `dropped: ${p.drop}` : (p.state || "new");
+  const left = marksLeft(p);
+  return `${String(p.order).padStart(2, "0")} · ${p.symbol} · ${p.kind} · p${p.page} · ${st}${left ? ` · ${left} to fix` : ""}`;
+}
+
+async function loadList(keep) {
+  pages = await api("api/pages");
+  $("pick").innerHTML = pages.map((p) => `<option value="${p.key}">${esc(label(p))}</option>`).join("");
+  $("pick").value = keep || (pages.find(marksLeft) || pages.find((p) => !p.state && !p.drop) || pages[0]).key;
+}
+
+function setBadge(rec) {
+  const b = $("badge");
+  b.className = "badge " + (rec?.drop ? "dropped" : rec?.state || "");
+  b.textContent = rec?.drop ? `dropped: ${rec.drop}` : rec?.state || "new";
+}
+
+async function open(key) {
+  if (dirty && !confirm("Leave this page without saving?")) { $("pick").value = cur; return; }
+  cur = key; dirty = false;
+  data = await api(`api/page/${key}`);
+  const rec = data.record;
+  $("img").src = `img/${key}.png`;
+  const names = Object.keys(data.drafts);
+  $("text").value = rec ? rec.text : (names.length ? data.drafts[names[0]] : "");
+  $("hashead").checked = !!rec?.heading;
+  $("headfields").hidden = !rec?.heading;
+  FIELDS.forEach((f) => ($("f-" + f).value = rec?.heading?.[f] || ""));
+  $("note").value = rec?.note || "";
+  $("dropwhy").value = "";
+  $("startfrom").innerHTML = names.map((n) => `<button data-draft="${n}">${n}</button>`).join("") || '<span class="hint">no drafts yet: run tools/draft_c.py</span>';
+  $("tab-drafts").innerHTML = names.map((n) => `<fieldset><legend>${n}</legend><div class="draft">${esc(data.drafts[n])}</div></fieldset>`).join("") || '<p class="hint">No drafts.</p>';
+  $("diff").innerHTML = names.length >= 2 ? diff(data.drafts[names[0]], data.drafts[names[1]]) : '<span class="hint">Needs two drafts.</span>';
+  setBadge(rec);
+  $("nums").innerHTML = $("hf").innerHTML = "";   // no ticks carried over from the last page
+  renderChecks(rec);
+  paint();
+  say(rec ? `saved ${rec.updated}` : "not saved yet");
+}
+
+function record(state, drop) {
+  const head = $("hashead").checked ? Object.fromEntries(FIELDS.map((f) => [f, $("f-" + f).value])) : null;
+  const ticked = (sel) => [...document.querySelectorAll(sel)].filter((c) => c.checked).map((c) => c.value);
+  return { text: $("text").value, heading: head, state, drop: drop || null, note: $("note").value,
+           checked_numbers: ticked("#nums input"), checked_fields: ticked("#hf input") };
+}
+
+async function save(state, drop) {
+  try {
+    const rec = await api(`api/page/${cur}`, record(state, drop));
+    data.record = rec; dirty = false;
+    setBadge(rec); say(`saved ${rec.updated}`);
+    await loadList(cur);
+  } catch (e) { say("not saved: " + e.message); }
+}
+
+function renderChecks(rec) {
+  const doneN = new Set(rec?.checked_numbers || []), doneF = new Set(rec?.checked_fields || []);
+  const text = $("text").value;
+  const keep = (id) => doneN.has(id) || [...document.querySelectorAll("#nums input")].some((c) => c.value === id && c.checked);
+  $("nums").innerHTML = numbers(text).map((n) =>
+    `<label title="${esc(n.ctx)}"><input type="checkbox" value="${esc(n.id)}" ${keep(n.id) ? "checked" : ""}><span>${esc(n.value)}</span></label>`
+  ).join("") || '<span class="hint">No numbers of 3+ digits.</span>';
+  const head = $("hashead").checked;
+  $("hf").innerHTML = head ? FIELDS.map((f) =>
+    `<label><input type="checkbox" value="${f}" ${doneF.has(f) ? "checked" : ""}><span>${f}: ${esc($("f-" + f).value) || "<i>empty</i>"}</span></label>`
+  ).join("") : '<span class="hint">No heading on this page.</span>';
+  updateCheck();
+}
+
+function updateCheck() {
+  const all = [...document.querySelectorAll("#nums input, #hf input")];
+  $("check").disabled = !all.every((c) => c.checked);
+}
+
+// Word diff of two drafts (LCS), for where to look first.
+function diff(a, b) {
+  const A = a.split(/(\s+)/).filter((w) => w.trim()), B = b.split(/(\s+)/).filter((w) => w.trim());
+  const n = A.length, m = B.length, L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && A[i] === B[j]) { out.push(esc(A[i])); i++; j++; }
+    else if (j >= m || (i < n && L[i + 1][j] >= L[i][j + 1])) out.push(`<del>${esc(A[i++])}</del>`);
+    else out.push(`<ins>${esc(B[j++])}</ins>`);
+  }
+  return out.join(" ");
+}
+
+function applyZoom() {
+  const img = $("img"), pane = $("imgpane");
+  if (!img.naturalWidth) return;
+  const w = zoom === "fit" ? pane.clientWidth - 2 : img.naturalWidth * zoom;
+  img.style.width = w + "px";
+  $("zl").textContent = Math.round((w / img.naturalWidth) * 100) + "%";
+}
+
+// Events.
+$("pick").onchange = (e) => open(e.target.value);
+$("prev").onclick = () => { const i = pages.findIndex((p) => p.key === cur); if (i > 0) { $("pick").value = pages[i - 1].key; open(pages[i - 1].key); } };
+$("next").onclick = () => { const i = pages.findIndex((p) => p.key === cur); if (i < pages.length - 1) { $("pick").value = pages[i + 1].key; open(pages[i + 1].key); } };
+$("save").onclick = () => save("corrected");
+$("check").onclick = () => save("checked");
+$("dropwhy").onchange = (e) => { if (e.target.value && confirm(`Drop this page: ${e.target.value}?`)) save(null, e.target.value); else e.target.value = ""; };
+$("hashead").onchange = () => { $("headfields").hidden = !$("hashead").checked; dirty = true; renderChecks(data.record); };
+$("startfrom").onclick = (e) => {
+  const n = e.target.dataset?.draft;
+  if (n && (!$("text").value.trim() || confirm(`Replace the text with the ${n} draft?`))) { $("text").value = data.drafts[n]; dirty = true; renderChecks(data.record); paint(); }
+};
+for (const id of ["text", "note", ...FIELDS.map((f) => "f-" + f)]) $(id).addEventListener("input", () => { dirty = true; say("unsaved changes"); paint(); });
+$("text").addEventListener("scroll", syncHl);
+$("text").addEventListener("change", () => renderChecks(data.record));
+FIELDS.forEach((f) => $("f-" + f).addEventListener("change", () => renderChecks(data.record)));
+$("tab-second").addEventListener("change", () => { dirty = true; updateCheck(); });
+document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => {
+  document.querySelectorAll("nav button, .tab").forEach((x) => x.classList.remove("on"));
+  b.classList.add("on"); $("tab-" + b.dataset.tab).classList.add("on");
+  if (b.dataset.tab === "second") renderChecks(data.record);
+}));
+$("zoombar").onclick = (e) => {
+  const z = e.target.dataset?.z; if (!z) return;
+  const img = $("img"), now = img.clientWidth / img.naturalWidth;
+  zoom = z === "fit" ? "fit" : z === "1" ? 1 : Math.min(3, Math.max(0.2, now * (z === "+" ? 1.25 : 0.8)));
+  applyZoom();
+};
+$("img").onload = applyZoom;
+window.onresize = () => { if (zoom === "fit") applyZoom(); syncHl(); };
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save("corrected"); }
+  if (e.altKey && e.key === "ArrowLeft") $("prev").click();
+  if (e.altKey && e.key === "ArrowRight") $("next").click();
+});
+window.onbeforeunload = () => (dirty ? true : undefined);
+
+loadList().then(() => open($("pick").value)).catch((e) => say("cannot load: " + e.message));
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# The reader (tools/read_pdf.py), in its own environment, as the measured runs used it.
+# Also needs poppler-utils (pdfinfo, pdftoppm, pdftotext) and the weights:
+#   bash tools/get_weights.sh
+-r requirements.txt
+paddleocr==3.7.0
+paddlex==3.7.2
+# GPU (CUDA 12.x): paddlepaddle-gpu from Paddle's index; CPU: paddlepaddle==3.2.1
+paddlepaddle-gpu==3.2.1
+rapidfuzz>=3.9

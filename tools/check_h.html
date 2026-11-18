@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set H check</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dcdad4;
+  --accent: #1f5fbf; --ok: #2e7d32; --warn: #b26a00; --bad: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --ink: #e8e6e1; --muted: #9a988f; --line: #34332f;
+    --accent: #7aa7ff; --ok: #7bc47f; --warn: #f0b45a; --bad: #ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+         padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); z-index: 1; }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+         border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--muted); }
+button.sel kbd { color: inherit; border-color: currentColor; }
+.muted { color: var(--muted); }
+#dots { display: flex; gap: 3px; flex-wrap: wrap; flex: 1; }
+#dots button { width: 20px; height: 20px; padding: 0; font-size: 10px; border-radius: 4px; }
+#dots button.now { outline: 2px solid var(--accent); outline-offset: 1px; }
+#dots button.done { background: var(--ok); color: #fff; border-color: var(--ok); }
+#dots button.unreadable { background: var(--warn); color: #fff; border-color: var(--warn); }
+main { max-width: 1400px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+#img { width: 100%; background: #8a8a8a; border-radius: 6px; display: block; }
+#ask { font: 600 18px/1.3 system-ui, sans-serif; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#value { font: 600 22px ui-monospace, monospace; width: min(420px, 100%); padding: 6px 8px;
+         border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+#err { color: var(--bad); min-height: 1.4em; }
+#imgbox { overflow-x: auto; border-radius: 6px; }
+#imgbox.zoom #img { width: auto; max-width: none; height: 300px; }   /* about the scan's own size: scroll sideways */
+#neg.sel { background: var(--bad); border-color: var(--bad); color: #fff; }
+@media (max-width: 700px) {
+  header { padding: 6px 10px; }
+  #dots { display: none; }
+  main { padding: 10px 12px; gap: 10px; }
+  #ask { font-size: 16px; }
+  .row button { flex: 1 1 40%; min-height: 46px; }
+  #value { width: 100%; font-size: 24px; }
+  kbd { display: none; }
+}
+#done { padding: 10px; border: 1px solid var(--ok); border-radius: 6px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Set H check</strong>
+  <span id="count" class="muted"></span>
+  <div id="dots"></div>
+  <button id="prev">← <kbd>←</kbd></button>
+  <button id="next"><kbd>→</kbd> →</button>
+</header>
+<main>
+  <div id="ask"></div>
+  <div class="muted" id="how"></div>
+  <div id="imgbox"><img id="img" alt="the page around the row: its code in orange, its column in blue"></div>
+  <div class="muted" id="tip">On a phone, hold it sideways. Tap the picture to zoom (then scroll sideways); tap again to fit.</div>
+  <div class="row" id="typeRow">
+    <input id="value" autocomplete="off" placeholder="as printed, e.g. 1.234.567 or (1.234.567)">
+    <button id="neg" type="button">Negative ( )</button>
+    <button data-a="typed">Save <kbd>Enter</kbd></button>
+    <button data-a="dash">A dash “-”</button>
+    <button data-a="nothing">Nothing printed</button>
+    <button data-a="unreadable">Can’t read</button>
+  </div>
+  <div class="row" id="signRow">
+    <button data-a="plain">Plain <kbd>1</kbd></button>
+    <button data-a="parentheses">In parentheses <kbd>2</kbd></button>
+    <button data-a="minus">With a minus <kbd>3</kbd></button>
+    <button data-a="dash">A dash <kbd>4</kbd></button>
+    <button data-a="nothing">Nothing printed <kbd>5</kbd></button>
+    <button data-a="unreadable">Can’t read <kbd>6</kbd></button>
+  </div>
+  <div id="err"></div>
+  <div id="done">Every item is answered. Stop the server and run <code>tools/check_h.py --finish</code>.</div>
+</main>
+<script>
+const NAMES = {B01: "balance sheet", B02: "income statement", B03: "cash flow statement"};
+let items = [], answers = {}, at = 0;
+const $ = id => document.getElementById(id);
+
+async function start() {
+  const r = await (await fetch("api/items")).json();
+  items = r.items; answers = r.answers;
+  const first = items.findIndex(it => !answers[it.id]);
+  at = first < 0 ? 0 : first;
+  dots(); show();
+}
+
+function dots() {
+  $("dots").innerHTML = "";
+  items.forEach((it, i) => {
+    const b = document.createElement("button");
+    b.textContent = i + 1;
+    const x = answers[it.id];
+    if (x) b.classList.add(x.answer === "unreadable" ? "unreadable" : "done");
+    if (i === at) b.classList.add("now");
+    b.onclick = () => { at = i; show(); };
+    $("dots").appendChild(b);
+  });
+  const n = Object.keys(answers).filter(id => items.some(it => it.id === id)).length;
+  $("count").textContent = `${n} of ${items.length} answered`;
+  $("done").style.display = n === items.length ? "block" : "none";
+}
+
+let neg = false;
+function grouped(d) { return d.replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+function setNeg(v) { neg = v; $("neg").classList.toggle("sel", neg); }
+function onType() {
+  const raw = $("value").value;
+  if (/[(\-]/.test(raw)) setNeg(true);
+}
+function show() {
+  const it = items[at], x = answers[it.id];
+  $("img").src = `img/${it.id}.png`;
+  const where = NAMES[it.statement] || it.statement;
+  if (it.kind === "sign") {
+    $("ask").textContent = `${at + 1}. Find the code in the orange box. Its figure in the blue column: how is it printed?`;
+    $("how").textContent = `A ${where}. The figure is inside the blue column, on the same line as the orange code; if the code's label runs onto a second line, on the line where the label ends. Only its sign: plain, in parentheses, or with a minus.`;
+  } else {
+    $("ask").textContent = `${at + 1}. Find the code in the orange box. Type its figure from the blue column.`;
+    $("how").textContent = `A ${where}. The figure is inside the blue column, on the same line as the orange code; if the code's label runs onto a second line, on the line where the label ends. Keep its dots and any parentheses or minus.`;
+  }
+  $("typeRow").style.display = it.kind === "type" ? "flex" : "none";
+  $("signRow").style.display = it.kind === "sign" ? "flex" : "none";
+  document.querySelectorAll("[data-a]").forEach(b => b.classList.toggle("sel", !!x && x.answer === b.dataset.a));
+  const was = x && x.answer === "typed" ? x.value : "";
+  setNeg(/^[(\-]/.test(was));
+  $("value").value = was;
+  $("err").textContent = "";
+  $("prev").disabled = at === 0; $("next").disabled = at === items.length - 1;
+  dots();
+  if (it.kind === "type" && matchMedia("(min-width: 701px)").matches) $("value").focus();
+}
+
+async function answer(a) {
+  const it = items[at];
+  let raw = $("value").value.trim();
+  raw = raw.replace(/^([(\-]?)(\d{4,})(\)?)$/, (m, o, d, c) => o + grouped(d) + c);  // bare digits: add the dots
+  const value = a === "typed" && raw ? (neg && !/^[(\-]/.test(raw) ? `(${raw})` : raw) : "";
+  if (a === "typed" && !value) { $("err").textContent = "Type the figure, or pick another answer."; return; }
+  const r = await fetch("api/answer", {method: "POST", headers: {"Content-Type": "application/json"},
+                                        body: JSON.stringify({id: it.id, answer: a, value})});
+  if (!r.ok) { $("err").textContent = (await r.json()).error || "not saved"; return; }
+  answers[it.id] = {answer: a, value};
+  if (at < items.length - 1) at++;
+  show();
+}
+
+document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => answer(b.dataset.a));
+$("value").addEventListener("input", onType);
+$("neg").onclick = () => setNeg(!neg);
+$("imgbox").onclick = () => $("imgbox").classList.toggle("zoom");
+$("prev").onclick = () => { if (at > 0) { at--; show(); } };
+$("next").onclick = () => { if (at < items.length - 1) { at++; show(); } };
+document.addEventListener("keydown", e => {
+  const typing = document.activeElement === $("value");
+  if (typing && e.key === "Enter") { e.preventDefault(); answer("typed"); return; }
+  if (typing) return;
+  if (e.key === "ArrowLeft") $("prev").click();
+  if (e.key === "ArrowRight") $("next").click();
+  const it = items[at];
+  if (it && it.kind === "sign" && "123456".includes(e.key) && e.key)
+    answer(["plain", "parentheses", "minus", "dash", "nothing", "unreadable"][+e.key - 1]);
+});
+start();
+</script>
+</body>
+</html>

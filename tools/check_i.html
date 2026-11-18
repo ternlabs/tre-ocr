@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set I check</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dcdad4;
+  --accent: #1f5fbf; --ok: #2e7d32; --warn: #b26a00; --bad: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --ink: #e8e6e1; --muted: #9a988f; --line: #34332f;
+    --accent: #7aa7ff; --ok: #7bc47f; --warn: #f0b45a; --bad: #ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+         padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); z-index: 1; }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+         border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--muted); }
+button.sel kbd { color: inherit; border-color: currentColor; }
+.muted { color: var(--muted); }
+#dots { display: flex; gap: 3px; flex-wrap: wrap; flex: 1; }
+#dots button { width: 20px; height: 20px; padding: 0; font-size: 10px; border-radius: 4px; }
+#dots button.now { outline: 2px solid var(--accent); outline-offset: 1px; }
+#dots button.done { background: var(--ok); color: #fff; border-color: var(--ok); }
+#dots button.unreadable { background: var(--warn); color: #fff; border-color: var(--warn); }
+main { max-width: 1400px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+#img { width: 100%; background: #8a8a8a; border-radius: 6px; display: block; }
+#ask { font: 600 18px/1.3 system-ui, sans-serif; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#value { font: 600 22px ui-monospace, monospace; width: min(420px, 100%); padding: 6px 8px;
+         border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+#err { color: var(--bad); min-height: 1.4em; }
+#imgbox { overflow-x: auto; border-radius: 6px; }
+#imgbox.zoom #img { width: auto; max-width: none; height: 300px; }   /* about the scan's own size: scroll sideways */
+#neg.sel { background: var(--bad); border-color: var(--bad); color: #fff; }
+@media (max-width: 700px) {
+  header { padding: 6px 10px; }
+  #dots { display: none; }
+  main { padding: 10px 12px; gap: 10px; }
+  #ask { font-size: 16px; }
+  .row button { flex: 1 1 40%; min-height: 46px; }
+  #value { width: 100%; font-size: 24px; }
+  kbd { display: none; }
+}
+input.small { font: 600 20px ui-monospace, monospace; width: 9em; padding: 6px 8px;
+               border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+#done, #partDone { padding: 10px; border: 1px solid var(--ok); border-radius: 6px; display: none; }
+#parts { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 16px; border-bottom: 1px solid var(--line); }
+#parts button { padding: 3px 8px; font-size: 12px; }
+#parts button.full { border-color: var(--ok); color: var(--ok); }
+#parts button.sel { color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Set I check</strong> <span id="round" class="muted"></span>
+  <span id="count" class="muted"></span>
+  <div id="dots"></div>
+  <button id="prev">← <kbd>←</kbd></button>
+  <button id="next"><kbd>→</kbd> →</button>
+</header>
+<nav id="parts"></nav>
+<main>
+  <div id="ask"></div>
+  <div class="muted" id="how"></div>
+  <div id="imgbox"><img id="img" alt="the page around the row: its code in orange, its column in blue"></div>
+  <div class="muted" id="tip">On a phone, hold it sideways. Tap the picture to zoom (then scroll sideways); tap again to fit.</div>
+  <div class="row" id="typeRow">
+    <input id="value" autocomplete="off" placeholder="as printed, e.g. 1.234.567 or (1.234.567)">
+    <button id="neg" type="button">Negative ( )</button>
+    <button data-a="typed">Save <kbd>Enter</kbd></button>
+    <button data-a="dash">A dash “-”</button>
+    <button data-a="nothing">Nothing printed</button>
+    <button data-a="unreadable">Can’t read</button>
+  </div>
+  <div class="row" id="pageRow">
+    <a id="wholePage" target="_blank" rel="noopener"><button type="button">The whole page (PDF)</button></a>
+  </div>
+  <div class="row" id="signRow">
+    <button data-a="plain">Plain <kbd>1</kbd></button>
+    <button data-a="parentheses">In parentheses <kbd>2</kbd></button>
+    <button data-a="minus">With a minus <kbd>3</kbd></button>
+    <button data-a="dash">A dash <kbd>4</kbd></button>
+    <button data-a="nothing">Nothing printed <kbd>5</kbd></button>
+    <button data-a="unreadable">Can’t read <kbd>6</kbd></button>
+  </div>
+  <div class="row" id="whereRow">
+    <a id="pdf" target="_blank" rel="noopener"><button type="button">Open the PDF</button></a>
+    <input id="pages" class="small" autocomplete="off" placeholder="pages, e.g. 7-8">
+    <button data-a="pages">Save <kbd>Enter</kbd></button>
+    <button data-a="not printed">Not printed in this file</button>
+  </div>
+  <div class="row" id="colRow">
+    <label><span id="labA"></span> <input id="colA" class="small" inputmode="numeric" autocomplete="off"></label>
+    <label id="boxB"><span id="labB"></span> <input id="colB" class="small" inputmode="numeric" autocomplete="off"></label>
+    <button data-a="columns">Save <kbd>Enter</kbd></button>
+    <button data-a="not this">This page is not that statement</button>
+  </div>
+  <div class="row" id="unreadRow">
+    <button data-a="seen">Noted <kbd>Enter</kbd></button>
+  </div>
+  <div id="err"></div>
+  <div id="partDone">Every question of this part is answered. Pick another part above.</div>
+  <div id="done">Every item is answered. Stop the server.</div>
+</main>
+<script>
+const NAMES = {B01: "balance sheet", B02: "income statement", B03: "cash flow statement"};
+const PART = 100;                     // questions per part: each part is its own page (#part=N)
+let items = [], answers = {}, at = 0;
+const partOf = i => Math.floor(i / PART);
+const lo = () => partOf(at) * PART, hi = () => Math.min(items.length, lo() + PART) - 1;
+const $ = id => document.getElementById(id);
+
+async function start() {
+  const r = await (await fetch("api/items")).json();
+  items = r.items; answers = r.answers;
+  $("round").textContent = `— ${r.round}`;
+  goPart(fromHash());
+  window.addEventListener("hashchange", () => goPart(fromHash()));
+}
+
+function fromHash() {
+  const m = location.hash.match(/part=(\d+)/);
+  if (m) return +m[1] - 1;
+  const first = items.findIndex(it => !answers[it.id]);
+  return partOf(first < 0 ? 0 : first);
+}
+
+function goPart(p) {
+  p = Math.max(0, Math.min(p, partOf(items.length - 1)));
+  if (location.hash !== `#part=${p + 1}`) history.replaceState(null, "", `#part=${p + 1}`);
+  const start = p * PART, end = Math.min(items.length, start + PART);
+  const first = items.slice(start, end).findIndex(it => !answers[it.id]);
+  at = start + (first < 0 ? 0 : first);
+  show();
+}
+
+function parts() {
+  $("parts").innerHTML = "";
+  for (let p = 0; p <= partOf(items.length - 1); p++) {
+    const part = items.slice(p * PART, (p + 1) * PART);
+    const n = part.filter(it => answers[it.id]).length;
+    const b = document.createElement("button");
+    b.textContent = `${p * PART + 1}–${p * PART + part.length} · ${n}/${part.length}`;
+    if (n === part.length) b.classList.add("full");
+    if (p === partOf(at)) b.classList.add("sel");
+    b.onclick = () => { history.replaceState(null, "", `#part=${p + 1}`); goPart(p); };
+    $("parts").appendChild(b);
+  }
+}
+
+function dots() {
+  $("dots").innerHTML = "";
+  items.forEach((it, i) => {
+    if (i < lo() || i > hi()) return;
+    const b = document.createElement("button");
+    b.textContent = i + 1;
+    const x = answers[it.id];
+    if (x) b.classList.add(x.answer === "unreadable" ? "unreadable" : "done");
+    if (i === at) b.classList.add("now");
+    b.onclick = () => { at = i; show(); };
+    $("dots").appendChild(b);
+  });
+  const n = Object.keys(answers).filter(id => items.some(it => it.id === id)).length;
+  const part = items.slice(lo(), hi() + 1), m = part.filter(it => answers[it.id]).length;
+  $("count").textContent = `part ${partOf(at) + 1}: ${m} of ${part.length} · all: ${n} of ${items.length}`;
+  $("done").style.display = n === items.length ? "block" : "none";
+  $("partDone").style.display = m === part.length && n < items.length ? "block" : "none";
+  parts();
+}
+
+let neg = false;
+function grouped(d) { return d.replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+function setNeg(v) { neg = v; $("neg").classList.toggle("sel", neg); }
+function onType() {
+  const raw = $("value").value;
+  if (/[(\-]/.test(raw)) setNeg(true);
+}
+function show() {
+  const it = items[at], x = answers[it.id];
+  const where = NAMES[it.statement] || it.statement;
+  const pictured = !["where", "unread"].includes(it.kind);
+  $("imgbox").style.display = $("tip").style.display = pictured ? "" : "none";
+  if (pictured) $("img").src = `img/${it.id}.png`;
+  const filing = it.side === "base" ? "the base filing (the period itself)" : "the later filing (a year on)";
+  if (it.kind === "where") {
+    $("ask").textContent = `${at + 1}. On which pages of this PDF is the ${where} printed?`;
+    $("how").textContent = `In ${filing}; the PDF has ${it.pages} pages. Give the PDF's own page numbers (as the viewer counts them, not as printed on the page): "7", "7-8" or "7, 9". If this file has no ${where}, say so.`;
+    $("pdf").href = `pdf/${it.id}.pdf`;
+  } else if (it.kind === "unread") {
+    $("ask").textContent = `${at + 1}. The ${where} on the pages you gave could not be read into rows.`;
+    $("how").textContent = `Nothing to answer: its cells will not be typed here. Press Noted.`;
+  } else if (it.kind === "columns") {
+    $("ask").textContent = `${at + 1}. The ${where}, ${filing}: which numbered blue columns hold ${it.ask}?`;
+    $("how").textContent = it.balance
+      ? `Give the number of the column with the figures at that date. Leave it empty if no column has them.`
+      : `First box: the column for ${it.ask} alone. Second box: the year to date up to its end (luỹ kế từ đầu năm). Leave a box empty if no column has it. Number = the blue number above the column.`;
+    $("labA").textContent = it.balance ? "Column" : "Period alone";
+    $("labB").textContent = "Year to date";
+    $("boxB").style.display = it.balance ? "none" : "";
+  } else if (it.kind === "sign") {
+    $("ask").textContent = `${at + 1}. Find the code in the orange box. Its figure in the blue column: how is it printed?`;
+    $("how").textContent = `A ${where}. The figure is inside the blue column, on the same line as the orange code; if the code's label runs onto a second line, on the line where the label ends. Only its sign: plain, in parentheses, or with a minus.`;
+  } else {
+    $("ask").textContent = `${at + 1}. Find the code in the orange box. Type its figure from the blue column.`;
+    $("how").textContent = `A ${where}. The figure is inside the blue column, on the same line as the orange code; if the code's label runs onto a second line, on the line where the label ends. Keep its dots and any parentheses or minus.`;
+  }
+  $("typeRow").style.display = it.kind === "type" ? "flex" : "none";
+  $("pageRow").style.display = ["type", "sign"].includes(it.kind) ? "flex" : "none";
+  if (it.page) $("wholePage").href = `pdf/${it.id}.pdf#page=${it.page}`;
+  else { $("wholePage").removeAttribute("href"); $("pageRow").style.display = "none"; }
+  $("signRow").style.display = it.kind === "sign" ? "flex" : "none";
+  $("whereRow").style.display = it.kind === "where" ? "flex" : "none";
+  $("colRow").style.display = it.kind === "columns" ? "flex" : "none";
+  $("unreadRow").style.display = it.kind === "unread" ? "flex" : "none";
+  $("pages").value = x && x.answer === "pages" ? x.value : "";
+  const cv = (x && x.answer === "columns" ? x.value : "|").split("|");
+  $("colA").value = cv[0]; $("colB").value = cv[1] || "";
+  document.querySelectorAll("[data-a]").forEach(b => b.classList.toggle("sel", !!x && x.answer === b.dataset.a));
+  const was = x && x.answer === "typed" ? x.value : "";
+  setNeg(/^[(\-]/.test(was));
+  $("value").value = was;
+  $("err").textContent = "";
+  $("prev").disabled = at === lo(); $("next").disabled = at === hi();
+  dots();
+  if (matchMedia("(min-width: 701px)").matches) {
+    if (it.kind === "type") $("value").focus();
+    if (it.kind === "where") $("pages").focus();
+    if (it.kind === "columns") $("colA").focus();
+  }
+}
+
+function valueOf(a) {
+  if (a === "pages") return $("pages").value.trim();
+  if (a === "columns") return `${$("colA").value.trim()}|${$("colB").value.trim()}`;
+  return null;
+}
+
+async function answer(a) {
+  const it = items[at];
+  let raw = $("value").value.trim();
+  raw = raw.replace(/^([(\-]?)(\d{4,})(\)?)$/, (m, o, d, c) => o + grouped(d) + c);  // bare digits: add the dots
+  let value = a === "typed" && raw ? (neg && !/^[(\-]/.test(raw) ? `(${raw})` : raw) : "";
+  if (a === "typed" && !value) { $("err").textContent = "Type the figure, or pick another answer."; return; }
+  if (valueOf(a) !== null) value = valueOf(a);
+  const r = await fetch("api/answer", {method: "POST", headers: {"Content-Type": "application/json"},
+                                        body: JSON.stringify({id: it.id, answer: a, value})});
+  if (!r.ok) { $("err").textContent = (await r.json()).error || "not saved"; return; }
+  answers[it.id] = {answer: a, value};
+  if (at < hi()) at++;
+  show();
+}
+
+document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => answer(b.dataset.a));
+$("value").addEventListener("input", onType);
+$("neg").onclick = () => setNeg(!neg);
+$("imgbox").onclick = () => $("imgbox").classList.toggle("zoom");
+$("prev").onclick = () => { if (at > lo()) { at--; show(); } };
+$("next").onclick = () => { if (at < hi()) { at++; show(); } };
+document.addEventListener("keydown", e => {
+  const field = {value: "typed", pages: "pages", colA: "columns", colB: "columns"}[document.activeElement.id];
+  if (field && e.key === "Enter") { e.preventDefault(); answer(field); return; }
+  if (field) return;
+  if (e.key === "Enter" && items[at] && items[at].kind === "unread") { answer("seen"); return; }
+  if (e.key === "ArrowLeft") $("prev").click();
+  if (e.key === "ArrowRight") $("next").click();
+  const it = items[at];
+  if (it && it.kind === "sign" && "123456".includes(e.key) && e.key)
+    answer(["plain", "parentheses", "minus", "dash", "nothing", "unreadable"][+e.key - 1]);
+});
+start();
+</script>
+</body>
+</html>
